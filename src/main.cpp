@@ -55,7 +55,7 @@ void setup()
   tft.pushImage(0, 0, 135, 240, bootlogo);
 }
 
-int gameSpeed = 7000;
+int gameSpeed = 10000;
 
 void loop()
 {
@@ -99,9 +99,9 @@ void loop()
     if (px >= 2 && px <= 109)
     {
       if (digitalRead(BUTTON_LEFT) == 0)
-        px--;
+        px -= 2;
       if (digitalRead(BUTTON_RIGHT) == 0)
-        px++;
+        px += 2;
     }
     if (px <= 3)
       px = 4;
@@ -109,7 +109,7 @@ void loop()
     if (px >= 108)
       px = 107;
 
-    if (y >= 232 && x > px && x < px + 24)
+    if (y > 232 && x > px && x < px + 24)
     { ///brisati kasnije
       ys = -ys;
       xs = amount[random(4)] * vrije[random(2)];
@@ -164,7 +164,7 @@ void loop()
 
     tft.setCursor(13, 103, 2);
     tft.println("GAME OVER");
-   
+
     tft.setCursor(13, 123, 4);
     tft.println("Score: " + String(score));
 
