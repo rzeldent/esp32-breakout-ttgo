@@ -1,109 +1,107 @@
-
 //240x135
+#include <WiFi.h>
 #include <SPI.h>
 #include <TFT_eSPI.h> // Hardware-specific library
 #include "bmp.h"
 
-#define TFT_GREY 0x5AEB
-#define lightblue 0x2D18
-#define orange 0xFB60
-#define purple 0xFB9B
+#define BUTTON_LEFT 0
+#define BUTTON_RIGHT 35
 
 void newLevel();
 
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 
 float ys = 1;
-
 float x = random(30, 100); //coordinates of ball
 float y = 70;
+
 int ny = y; //coordinates of previous position
 int nx = x;
 
 float px = 45; //67 je sredina    pozicija igrača
 int pxn = px;
+
 int vrije[2] = {1, -1};
 int enx[16] = {8, 33, 58, 83, 108, 8, 33, 58, 83, 108, 22, 47, 72, 97, 47, 72};
 int eny[16] = {37, 37, 37, 37, 37, 45, 45, 45, 45, 45, 53, 53, 53, 53, 61, 61};
-int enc[16] = {TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, orange, orange, orange, orange, lightblue, lightblue};
-int score = 0;
-int level = 1;
+int enc[16] = {TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_ORANGE, TFT_ORANGE, TFT_ORANGE, TFT_ORANGE, TFT_SKYBLUE, TFT_SKYBLUE};
+
+uint score = 0;
+uint level = 1;
+
 float amount[4] = {0.25, 0.50, 0.75, 1};
 float xs = amount[random(4)] * vrije[random(2)];
-int fase = 0;
-void setup(void)
+
+enum game_state
 {
-  pinMode(0, INPUT);
-  pinMode(35, INPUT);
+  initialize,
+  playing,
+  gameover
+};
+game_state state = game_state::initialize;
+
+void setup()
+{
+  // Turn off WiFi and Bluetooth to save power
+  WiFi.mode(WIFI_OFF);
+  btStop();
+
+  pinMode(BUTTON_LEFT, INPUT);
+  pinMode(BUTTON_RIGHT, INPUT);
+
   tft.init();
   tft.setRotation(0);
-
   tft.setSwapBytes(true);
   tft.pushImage(0, 0, 135, 240, bootlogo);
 }
 
-float xstep = 1;
-int spe = 0;
-int pom = 0;
 int gameSpeed = 7000;
+
 void loop()
 {
-
-  if (fase == 0)
+  switch (state)
   {
-
-    if (digitalRead(0) == 0 || digitalRead(35) == 0)
+  case initialize:
+    if (digitalRead(BUTTON_LEFT) == 0 || digitalRead(BUTTON_RIGHT) == 0)
     {
-      if (pom == 0)
-      {
-        tft.fillScreen(TFT_BLACK);
-        tft.drawLine(0, 17, 0, 240, TFT_GREY);
-        tft.drawLine(0, 17, 135, 17, TFT_GREY);
-        tft.drawLine(134, 17, 134, 240, TFT_GREY);
+      tft.fillScreen(TFT_BLACK);
+      tft.drawLine(0, 17, 0, 240, TFT_LIGHTGREY);
+      tft.drawLine(0, 17, 135, 17, TFT_LIGHTGREY);
+      tft.drawLine(134, 17, 134, 240, TFT_LIGHTGREY);
 
-        tft.setCursor(3, 3, 2);
+      //tft.setCursor(3, 3, 2);
 
-        tft.setTextColor(TFT_WHITE, TFT_BLACK);
-        tft.setTextSize(1);
+      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      tft.setTextSize(1);
 
-        tft.setCursor(0, 0, 2);
-        tft.println("SCORE " + String(score));
+      tft.setCursor(0, 0, 2);
+      tft.println("SCORE " + String(score));
 
-        tft.setCursor(99, 0, 2);
-        tft.println("LVL" + String(level));
-        fase = fase + 1;
-        pom = 1;
-      }
+      tft.setCursor(99, 0, 2);
+      tft.println("LVL" + String(level));
+      state = playing;
     }
-    else
-    {
-      pom = 0;
-    }
-  }
+    break;
 
-  if (fase == 1)
-  {
-
+  case playing:
     if (y != ny)
     {
       tft.fillEllipse(nx, ny, 2, 2, TFT_BLACK); //brisanje loptice
       ny = y;
       nx = x;
     }
-    if (int(px) != pxn)
+    if ((int)px != pxn)
     {
       tft.fillRect(pxn, 234, 24, 4, TFT_BLACK); //briasnje igraca
       pxn = px;
     }
 
-    // spe=spe+1;
-
     if (px >= 2 && px <= 109)
     {
-      if (digitalRead(0) == 0)
-        px = px - 1;
-      if (digitalRead(35) == 0)
-        px = px + 1;
+      if (digitalRead(BUTTON_LEFT) == 0)
+        px--;
+      if (digitalRead(BUTTON_RIGHT) == 0)
+        px++;
     }
     if (px <= 3)
       px = 4;
@@ -111,10 +109,9 @@ void loop()
     if (px >= 108)
       px = 107;
 
-    if (y > 232 && x > px && x < px + 24)
+    if (y >= 232 && x > px && x < px + 24)
     { ///brisati kasnije
-      ys = ys * -1;
-
+      ys = -ys;
       xs = amount[random(4)] * vrije[random(2)];
     }
 
@@ -124,38 +121,33 @@ void loop()
       {
         tft.fillRect(enx[j], eny[j], 20, 4, TFT_BLACK);
         enx[j] = 400;
-        ys = ys * -1;
+        ys = -ys;
         xs = amount[random(4)] * vrije[random(2)];
-
-        score = score + 1;
-
+        score++;
         tft.setCursor(0, 0, 2);
         tft.println("SCORE " + String(score));
       }
     }
 
     if (y < 21)
-      ys = ys * -1.00;
+      ys = -ys;
 
     if (y > 240)
-      fase = fase + 1;
+      state = gameover;
 
     if (x >= 130)
-      xs = xs * -1.00;
+      xs = -xs;
 
     if (x <= 4)
-      xs = xs * -1.00;
+      xs = -xs;
 
     for (int i = 0; i < 16; i++) //draw enemies
       tft.fillRect(enx[i], eny[i], 20, 4, enc[i]);
 
     tft.fillEllipse(int(x), y, 2, 2, TFT_WHITE); // draw ball
 
-    //if(spe>10){  //change coordinates of ball
-    y = y + ys;
-    x = x + xs;
-    //spe=0;
-    //}
+    y += ys;
+    x += xs;
 
     tft.fillRect(px, 234, 24, 4, TFT_WHITE);
 
@@ -163,37 +155,34 @@ void loop()
       newLevel();
 
     delayMicroseconds(gameSpeed);
-  }
-  if (fase == 2)
-  {
+    break;
 
+  case gameover:
     tft.fillScreen(TFT_BLACK);
-
-    tft.setCursor(13, 103, 2);
-
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextSize(1);
 
+    tft.setCursor(13, 103, 2);
     tft.println("GAME OVER");
+   
     tft.setCursor(13, 123, 4);
-    tft.println("SCORE:" + String(score));
+    tft.println("Score: " + String(score));
 
     tft.setCursor(13, 153, 4);
-    tft.println("LEVEL:" + String(level));
+    tft.println("Level: " + String(level));
 
-    tft.setCursor(13, 123, 4);
-    tft.println("SCORE:" + String(score));
-
-    delay(3000);
+    delay(10000);
+    ESP.restart();
   }
 }
 
 void newLevel()
 {
-  score = score + 1;
+  score++;
+  level++;
+  gameSpeed -= 500;
   delay(3000);
-  gameSpeed = gameSpeed - 500;
-  level = level + 1;
+
   tft.setCursor(99, 0, 2);
   tft.println("LVL" + String(level));
   y = 75;
@@ -202,7 +191,5 @@ void newLevel()
 
   int enx2[16] = {8, 33, 58, 83, 108, 8, 33, 58, 83, 108, 22, 47, 72, 97, 47, 72};
   for (int n = 0; n < 16; n++)
-  {
     enx[n] = enx2[n];
-  }
 }
