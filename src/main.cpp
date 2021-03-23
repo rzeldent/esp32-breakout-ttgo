@@ -1,4 +1,5 @@
-//240x135
+// 240x135
+
 #include <WiFi.h>
 #include <SPI.h>
 #include <TFT_eSPI.h> // Hardware-specific library
@@ -7,24 +8,22 @@
 #define BUTTON_LEFT 0
 #define BUTTON_RIGHT 35
 
-void newLevel();
+auto tft = TFT_eSPI(); // Invoke custom library
 
-TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
+auto ys = 1;
+auto x = (int)random(30, 100); // coordinates of ball
+auto y = 70;
 
-float ys = 1;
-float x = random(30, 100); //coordinates of ball
-float y = 70;
+auto ny = y; // coordinates of previous position
+auto nx = x;
 
-int ny = y; //coordinates of previous position
-int nx = x;
-
-float px = 45; //67 je sredina    pozicija igrača
+auto px = 45; // 67 is the midfield position of the players
 int pxn = px;
 
-int vrije[2] = {1, -1};
+const int vrije[2] = {1, -1};
 int enx[16] = {8, 33, 58, 83, 108, 8, 33, 58, 83, 108, 22, 47, 72, 97, 47, 72};
 int eny[16] = {37, 37, 37, 37, 37, 45, 45, 45, 45, 45, 53, 53, 53, 53, 61, 61};
-int enc[16] = {TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_ORANGE, TFT_ORANGE, TFT_ORANGE, TFT_ORANGE, TFT_SKYBLUE, TFT_SKYBLUE};
+const int enc[16] = {TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_ORANGE, TFT_ORANGE, TFT_ORANGE, TFT_ORANGE, TFT_SKYBLUE, TFT_SKYBLUE};
 
 uint score = 0;
 uint level = 1;
@@ -57,19 +56,35 @@ void setup()
 
 int gameSpeed = 10000;
 
+void newLevel()
+{
+  score++;
+  level++;
+  gameSpeed -= 500;
+  delay(3000);
+
+  tft.setCursor(99, 0, 2);
+  tft.println("LVL" + String(level));
+  y = 75;
+  ys = 1;
+  x = random(30, 100);
+
+  int enx2[16] = {8, 33, 58, 83, 108, 8, 33, 58, 83, 108, 22, 47, 72, 97, 47, 72};
+  for (int n = 0; n < 16; n++)
+    enx[n] = enx2[n];
+}
+
 void loop()
 {
   switch (state)
   {
   case initialize:
-    if (digitalRead(BUTTON_LEFT) == 0 || digitalRead(BUTTON_RIGHT) == 0)
+    if (!digitalRead(BUTTON_LEFT) || !digitalRead(BUTTON_RIGHT))
     {
       tft.fillScreen(TFT_BLACK);
       tft.drawLine(0, 17, 0, 240, TFT_LIGHTGREY);
       tft.drawLine(0, 17, 135, 17, TFT_LIGHTGREY);
       tft.drawLine(134, 17, 134, 240, TFT_LIGHTGREY);
-
-      //tft.setCursor(3, 3, 2);
 
       tft.setTextColor(TFT_WHITE, TFT_BLACK);
       tft.setTextSize(1);
@@ -86,23 +101,25 @@ void loop()
   case playing:
     if (y != ny)
     {
-      tft.fillEllipse(nx, ny, 2, 2, TFT_BLACK); //brisanje loptice
+      tft.fillEllipse(nx, ny, 2, 2, TFT_BLACK); // wiping the ball
       ny = y;
       nx = x;
     }
-    if ((int)px != pxn)
+    if (px != pxn)
     {
-      tft.fillRect(pxn, 234, 24, 4, TFT_BLACK); //briasnje igraca
+      tft.fillRect(pxn, 234, 24, 4, TFT_BLACK); // deleting players
       pxn = px;
     }
 
     if (px >= 2 && px <= 109)
     {
-      if (digitalRead(BUTTON_LEFT) == 0)
+      if (!digitalRead(BUTTON_LEFT))
         px -= 2;
-      if (digitalRead(BUTTON_RIGHT) == 0)
+
+      if (!digitalRead(BUTTON_RIGHT))
         px += 2;
     }
+
     if (px <= 3)
       px = 4;
 
@@ -110,7 +127,7 @@ void loop()
       px = 107;
 
     if (y > 232 && x > px && x < px + 24)
-    { ///brisati kasnije
+    { // delete later
       ys = -ys;
       xs = amount[random(4)] * vrije[random(2)];
     }
@@ -141,10 +158,10 @@ void loop()
     if (x <= 4)
       xs = -xs;
 
-    for (int i = 0; i < 16; i++) //draw enemies
+    for (int i = 0; i < 16; i++) // draw enemies
       tft.fillRect(enx[i], eny[i], 20, 4, enc[i]);
 
-    tft.fillEllipse(int(x), y, 2, 2, TFT_WHITE); // draw ball
+    tft.fillEllipse(x, y, 2, 2, TFT_WHITE); // draw ball
 
     y += ys;
     x += xs;
@@ -174,22 +191,4 @@ void loop()
     delay(10000);
     ESP.restart();
   }
-}
-
-void newLevel()
-{
-  score++;
-  level++;
-  gameSpeed -= 500;
-  delay(3000);
-
-  tft.setCursor(99, 0, 2);
-  tft.println("LVL" + String(level));
-  y = 75;
-  ys = 1;
-  x = random(30, 100);
-
-  int enx2[16] = {8, 33, 58, 83, 108, 8, 33, 58, 83, 108, 22, 47, 72, 97, 47, 72};
-  for (int n = 0; n < 16; n++)
-    enx[n] = enx2[n];
 }
