@@ -18,6 +18,14 @@ constexpr auto frame_color = TFT_LIGHTGREY;
 constexpr auto ball_color = TFT_YELLOW;
 constexpr auto paddle_color = TFT_SILVER;
 
+constexpr auto ball_size = 2;
+constexpr auto paddle_width = 24;
+constexpr auto paddle_height = 4;
+constexpr auto paddle_y = 234;
+
+constexpr auto tile_width = (uint16_t)20;
+constexpr auto tile_height = (uint16_t)4;
+
 struct point
 {
   float x, y;
@@ -64,13 +72,6 @@ auto ball_speed = point{random_speed(), 1};
 auto paddle_x = 45; // 67 is the midfield position of the players
 auto paddle_prev_x = paddle_x;
 
-constexpr auto ball_size = 2;
-constexpr auto paddle_width = 24;
-constexpr auto paddle_height = 4;
-
-constexpr auto tile_width = (uint16_t)20;
-constexpr auto tile_height = (uint16_t)4;
-
 tile tiles[] = {
     {8, 37, tile_width, tile_height, TFT_RED},
     {33, 37, tile_width, tile_height, TFT_RED},
@@ -96,10 +97,10 @@ uint level = 1;
 
 enum game_state
 {
-  wait,
+  splash,
   play,
   over
-} game_state = game_state::wait;
+} game_state = splash;
 
 void setup()
 {
@@ -177,7 +178,7 @@ void game_play()
   if (paddle_x != paddle_prev_x)
   {
     // Erase the previous paddle position
-    tft.fillRect(paddle_prev_x, 234, paddle_width, paddle_height, background_color);
+    tft.fillRect(paddle_prev_x, paddle_y, paddle_width, paddle_height, background_color);
     paddle_prev_x = paddle_x;
   }
 
@@ -222,11 +223,11 @@ void game_play()
   // Move the ball
   ball += ball_speed;
   // Draw the paddle
-  tft.fillRect(paddle_x, 234, paddle_width, paddle_height, paddle_color);
+  tft.fillRect(paddle_x, paddle_y, paddle_width, paddle_height, paddle_color);
 
   delayMicroseconds(gameSpeed);
 
-  // If a tile is still visible, level is not over
+  // If a tile is still visible, level is not done
   for (const auto &tile : tiles)
     if (tile.visible)
       return;
@@ -248,15 +249,13 @@ void loop()
 {
   switch (game_state)
   {
-  case game_state::wait:
+  case splash:
     game_wait();
     break;
-
-  case game_state::play:
+  case play:
     game_play();
     break;
-
-  case game_state::over:
+  case over:
     game_over();
   }
 }
