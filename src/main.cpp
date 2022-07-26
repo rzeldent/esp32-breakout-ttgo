@@ -1,194 +1,261 @@
-// 240x135
-
 #include <WiFi.h>
 #include <SPI.h>
-#include <TFT_eSPI.h> // Hardware-specific library
-#include "bmp.h"
+#include <soc/rtc_cntl_reg.h>
+#include <TFT_eSPI.h>
 
-#define BUTTON_LEFT 0
-#define BUTTON_RIGHT 35
+#include <ttgo_display.h>
 
-auto tft = TFT_eSPI(); // Invoke custom library
+#include <miniz.h>
+#include <images.h>
 
-auto ys = 1;
-auto x = (int)random(30, 100); // coordinates of ball
-auto y = 70;
+constexpr auto font_16pt = 2; // # Font 2. Small 16 pixel high font, needs ~3534 bytes in FLASH, 96 characters
+constexpr auto font_26pt = 4; // # Font 4. Medium 26 pixel high font, needs ~5848 bytes in FLASH, 96 characters
 
-auto ny = y; // coordinates of previous position
-auto nx = x;
+constexpr auto background_color = TFT_BLACK;
+constexpr auto text_color = TFT_WHITE;
 
-auto px = 45; // 67 is the midfield position of the players
-int pxn = px;
+constexpr auto frame_color = TFT_LIGHTGREY;
+constexpr auto ball_color = TFT_YELLOW;
+constexpr auto paddle_color = TFT_SILVER;
 
-const int vrije[2] = {1, -1};
-int enx[16] = {8, 33, 58, 83, 108, 8, 33, 58, 83, 108, 22, 47, 72, 97, 47, 72};
-int eny[16] = {37, 37, 37, 37, 37, 45, 45, 45, 45, 45, 53, 53, 53, 53, 61, 61};
-const int enc[16] = {TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_RED, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_GREEN, TFT_ORANGE, TFT_ORANGE, TFT_ORANGE, TFT_ORANGE, TFT_SKYBLUE, TFT_SKYBLUE};
+constexpr auto ball_size = 2;
+constexpr auto paddle_width = 24;
+constexpr auto paddle_height = 4;
+constexpr auto paddle_y = 234;
 
+constexpr auto tile_width = (uint16_t)20;
+constexpr auto tile_height = (uint16_t)4;
+
+struct point
+{
+  float x, y;
+
+  bool operator!=(const point &other) const
+  {
+    return x != other.x || y != other.y;
+  }
+
+  point &operator+=(const point &other)
+  {
+    x += other.x;
+    y += other.y;
+    return *this;
+  }
+};
+
+struct tile
+{
+  int16_t x, y;
+  uint16_t cx, cy;
+
+  uint16_t color;
+  bool visible;
+};
+
+auto tft = TFT_eSPI();
+
+float random_speed()
+{
+  static const float speed_factor[] = {-1.0, -0.75, -0.5, -0.25, 0.25, 0.50, 0.75, 1.0};
+  return speed_factor[random(sizeof(speed_factor) / sizeof(speed_factor[0]))];
+}
+
+float random_x()
+{
+  return (float)random(30, 100);
+}
+
+auto ball = point{random_x(), 70};
+auto ball_prev = ball;
+auto ball_speed = point{random_speed(), 1};
+
+auto paddle_x = 45; // 67 is the midfield position of the players
+auto paddle_prev_x = paddle_x;
+
+tile tiles[] = {
+    {8, 37, tile_width, tile_height, TFT_RED},
+    {33, 37, tile_width, tile_height, TFT_RED},
+    {58, 37, tile_width, tile_height, TFT_RED},
+    {83, 37, tile_width, tile_height, TFT_RED},
+    {108, 37, tile_width, tile_height, TFT_RED},
+    {8, 45, tile_width, tile_height, TFT_GREEN},
+    {33, 45, tile_width, tile_height, TFT_GREEN},
+    {58, 45, tile_width, tile_height, TFT_GREEN},
+    {83, 45, tile_width, tile_height, TFT_GREEN},
+    {108, 45, tile_width, tile_height, TFT_GREEN},
+    {22, 53, tile_width, tile_height, TFT_ORANGE},
+    {47, 53, tile_width, tile_height, TFT_ORANGE},
+    {72, 53, tile_width, tile_height, TFT_ORANGE},
+    {97, 53, tile_width, tile_height, TFT_ORANGE},
+    {47, 61, tile_width, tile_height, TFT_SKYBLUE},
+    {72, 61, tile_width, tile_height, TFT_SKYBLUE},
+    {56, 69, tile_width, tile_height, TFT_GREENYELLOW}};
+
+int gameSpeed = 15000;
 uint score = 0;
 uint level = 1;
 
-float amount[4] = {0.25, 0.50, 0.75, 1};
-float xs = amount[random(4)] * vrije[random(2)];
-
 enum game_state
 {
-  initialize,
-  playing,
-  gameover
-};
-game_state state = game_state::initialize;
+  splash,
+  play,
+  over
+} game_state = splash;
 
 void setup()
 {
+  // Disable brownout
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
+  //  ADC_EN is the ADC detection enable port
+  //  If the USB port is used for power supply, it is turned on by default.
+  //  If it is powered by battery, it needs to be set to high level
+  pinMode(GPIO_ADC_EN, OUTPUT);
+  digitalWrite(GPIO_ADC_EN, HIGH);
+
   // Turn off WiFi and Bluetooth to save power
   WiFi.mode(WIFI_OFF);
   btStop();
 
-  pinMode(BUTTON_LEFT, INPUT);
-  pinMode(BUTTON_RIGHT, INPUT);
+  pinMode(GPIO_BUTTON_BOTTOM, INPUT);
+  pinMode(GPIO_BUTTON_TOP, INPUT);
 
   tft.init();
   tft.setRotation(0);
   tft.setSwapBytes(true);
-  tft.pushImage(0, 0, 135, 240, bootlogo);
+  tft.setTextColor(text_color, background_color);
+  // Show splash screen
+  auto image_data = z_image_decode(&image_splash);
+  tft.pushImage(0, 0, image_splash.width, image_splash.height, image_data);
+  delete[] image_data;
 }
 
-int gameSpeed = 10000;
-
-void newLevel()
+void setup_level()
 {
-  score++;
+  ball = point{random_x(), 75};
+  ball_speed.y = 1;
+  for (auto &tile : tiles)
+  {
+    tile.visible = true;
+    tft.fillRect(tile.x, tile.y, tile.cx, tile.cy, tile.color);
+  }
+}
+
+void next_level()
+{
   level++;
   gameSpeed -= 500;
   delay(3000);
+  tft.drawString("LVL " + String(level), 99, 0, font_16pt);
+  setup_level();
+}
 
-  tft.setCursor(99, 0, 2);
-  tft.println("LVL" + String(level));
-  y = 75;
-  ys = 1;
-  x = random(30, 100);
+void game_wait()
+{
+  // Wait till any of the buttons is pressed
+  if (!digitalRead(GPIO_BUTTON_BOTTOM) || !digitalRead(GPIO_BUTTON_TOP))
+  {
+    tft.fillScreen(background_color);
+    tft.drawLine(0, 17, 0, 240, frame_color);
+    tft.drawLine(0, 17, 135, 17, frame_color);
+    tft.drawLine(134, 17, 134, 240, frame_color);
 
-  int enx2[16] = {8, 33, 58, 83, 108, 8, 33, 58, 83, 108, 22, 47, 72, 97, 47, 72};
-  for (int n = 0; n < 16; n++)
-    enx[n] = enx2[n];
+    tft.drawString("Score " + String(score), 0, 0, font_16pt);
+    setup_level();
+    game_state = play;
+  }
+}
+
+void game_play()
+{
+  if (ball.y != ball_prev.y)
+  {
+    // Erase the previous ball position
+    tft.fillEllipse(ball_prev.x, ball_prev.y, ball_size, ball_size, background_color);
+    ball_prev = ball;
+  }
+
+  if (paddle_x != paddle_prev_x)
+  {
+    // Erase the previous paddle position
+    tft.fillRect(paddle_prev_x, paddle_y, paddle_width, paddle_height, background_color);
+    paddle_prev_x = paddle_x;
+  }
+
+  if (paddle_x >= 4 && !digitalRead(GPIO_BUTTON_BOTTOM))
+    paddle_x -= 2;
+
+  if (paddle_x <= 107 && !digitalRead(GPIO_BUTTON_TOP))
+    paddle_x += 2;
+
+  for (auto &tile : tiles)
+  {
+    // Check if the ball hits the tile
+    if (tile.visible && (ball.x >= tile.x && ball.x < tile.x + tile.cx && ball.y >= tile.y && ball.y < tile.y + tile.cy))
+    {
+      tft.fillRect(tile.x, tile.y, tile.cx, tile.cy, background_color);
+      tile.visible = false;
+      // Bounce off tile
+      ball_speed = point{random_speed(), -ball_speed.y};
+      score++;
+      tft.drawString("Score: " + String(score), 0, 0, font_16pt);
+    }
+  }
+
+  // Check if ball went through the bottom
+  if (ball.y > 240)
+    game_state = game_state::over;
+
+  // Bounce on paddle
+  if (ball.y > 232 && ball.x > paddle_x && ball.x < paddle_x + paddle_width)
+    ball_speed = point{random_speed(), -1};
+
+  // Bounce at the top
+  if (ball.y < 21)
+    ball_speed.y = 1;
+
+  // Bounce at the sides
+  if (ball.x >= 130 || ball.x <= 4)
+    ball_speed.x = -ball_speed.x;
+
+  // Draw the ball
+  tft.fillEllipse(ball.x, ball.y, ball_size, ball_size, ball_color);
+  // Move the ball
+  ball += ball_speed;
+  // Draw the paddle
+  tft.fillRect(paddle_x, paddle_y, paddle_width, paddle_height, paddle_color);
+
+  delayMicroseconds(gameSpeed);
+
+  // If a tile is still visible, level is not done
+  for (const auto &tile : tiles)
+    if (tile.visible)
+      return;
+
+  next_level();
+}
+
+void game_over()
+{
+  tft.fillScreen(background_color);
+  tft.drawCentreString("GAME OVER", tft.width() / 2, 103 / 2, font_16pt);
+  tft.drawCentreString("Score: " + String(score), tft.width() / 2, 123, font_26pt);
+  tft.drawCentreString("Level: " + String(level), tft.width() / 2, 153, font_26pt);
+  delay(10000);
+  ESP.restart();
 }
 
 void loop()
 {
-  switch (state)
+  switch (game_state)
   {
-  case initialize:
-    if (!digitalRead(BUTTON_LEFT) || !digitalRead(BUTTON_RIGHT))
-    {
-      tft.fillScreen(TFT_BLACK);
-      tft.drawLine(0, 17, 0, 240, TFT_LIGHTGREY);
-      tft.drawLine(0, 17, 135, 17, TFT_LIGHTGREY);
-      tft.drawLine(134, 17, 134, 240, TFT_LIGHTGREY);
-
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.setTextSize(1);
-
-      tft.setCursor(0, 0, 2);
-      tft.println("SCORE " + String(score));
-
-      tft.setCursor(99, 0, 2);
-      tft.println("LVL" + String(level));
-      state = playing;
-    }
+  case splash:
+    game_wait();
     break;
-
-  case playing:
-    if (y != ny)
-    {
-      tft.fillEllipse(nx, ny, 2, 2, TFT_BLACK); // wiping the ball
-      ny = y;
-      nx = x;
-    }
-    if (px != pxn)
-    {
-      tft.fillRect(pxn, 234, 24, 4, TFT_BLACK); // deleting players
-      pxn = px;
-    }
-
-    if (px >= 2 && px <= 109)
-    {
-      if (!digitalRead(BUTTON_LEFT))
-        px -= 2;
-
-      if (!digitalRead(BUTTON_RIGHT))
-        px += 2;
-    }
-
-    if (px <= 3)
-      px = 4;
-
-    if (px >= 108)
-      px = 107;
-
-    if (y > 232 && x > px && x < px + 24)
-    { // delete later
-      ys = -ys;
-      xs = amount[random(4)] * vrije[random(2)];
-    }
-
-    for (int j = 0; j < 16; j++)
-    {
-      if (x > enx[j] && x < enx[j] + 20 && y > eny[j] && y < eny[j] + 5)
-      {
-        tft.fillRect(enx[j], eny[j], 20, 4, TFT_BLACK);
-        enx[j] = 400;
-        ys = -ys;
-        xs = amount[random(4)] * vrije[random(2)];
-        score++;
-        tft.setCursor(0, 0, 2);
-        tft.println("SCORE " + String(score));
-      }
-    }
-
-    if (y < 21)
-      ys = -ys;
-
-    if (y > 240)
-      state = gameover;
-
-    if (x >= 130)
-      xs = -xs;
-
-    if (x <= 4)
-      xs = -xs;
-
-    for (int i = 0; i < 16; i++) // draw enemies
-      tft.fillRect(enx[i], eny[i], 20, 4, enc[i]);
-
-    tft.fillEllipse(x, y, 2, 2, TFT_WHITE); // draw ball
-
-    y += ys;
-    x += xs;
-
-    tft.fillRect(px, 234, 24, 4, TFT_WHITE);
-
-    if (score == 16 || score == 33 || score == 50 || score == 67 || score == 84 || score == 101 || score == 118 || score == 135 || score == 152 || score == 169)
-      newLevel();
-
-    delayMicroseconds(gameSpeed);
+  case play:
+    game_play();
     break;
-
-  case gameover:
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextSize(1);
-
-    tft.setCursor(13, 103, 2);
-    tft.println("GAME OVER");
-
-    tft.setCursor(13, 123, 4);
-    tft.println("Score: " + String(score));
-
-    tft.setCursor(13, 153, 4);
-    tft.println("Level: " + String(level));
-
-    delay(10000);
-    ESP.restart();
+  case over:
+    game_over();
   }
 }
