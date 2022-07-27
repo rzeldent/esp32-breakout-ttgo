@@ -88,8 +88,7 @@ tile tiles[] = {
     {72, 53, tile_width, tile_height, TFT_ORANGE},
     {97, 53, tile_width, tile_height, TFT_ORANGE},
     {47, 61, tile_width, tile_height, TFT_SKYBLUE},
-    {72, 61, tile_width, tile_height, TFT_SKYBLUE},
-    {56, 69, tile_width, tile_height, TFT_GREENYELLOW}};
+    {72, 61, tile_width, tile_height, TFT_SKYBLUE}};
 
 int gameSpeed = 15000;
 uint score = 0;
